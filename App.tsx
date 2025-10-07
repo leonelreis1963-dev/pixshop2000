@@ -5,13 +5,12 @@
 
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import ReactCrop, { type Crop, type PixelCrop } from 'react-image-crop';
-import { generateEditedImage, generateFilteredImage, generateAdjustedImage } from './services/geminiService';
+import { generateEditedImage, generateFilteredImage, generateAdjustedImage, generateBackgroundImageRemoved } from './services/geminiService';
 import Header from './components/Header';
 import Spinner from './components/Spinner';
 import FilterPanel from './components/FilterPanel';
 import AdjustmentPanel from './components/AdjustmentPanel';
-import CropPanel from './components/CropPanel';
+import RemoveBackgroundPanel from './components/CropPanel';
 import { UndoIcon, RedoIcon, EyeIcon } from './components/icons';
 import StartScreen from './components/StartScreen';
 
@@ -32,7 +31,14 @@ const dataURLtoFile = (dataurl: string, filename: string): File => {
     return new File([u8arr], filename, {type:mime});
 }
 
-type Tab = 'retouch' | 'adjust' | 'filters' | 'crop';
+type Tab = 'retouch' | 'adjust' | 'filters' | 'remove-bg';
+
+const tabNames: { [key in Tab]: string } = {
+  retouch: 'Retocar',
+  adjust: 'Ajustar',
+  filters: 'Filtros',
+  'remove-bg': 'Remover Fundo',
+};
 
 const App: React.FC = () => {
   const [history, setHistory] = useState<File[]>([]);
@@ -44,11 +50,7 @@ const App: React.FC = () => {
   const [displayHotspot, setDisplayHotspot] = useState<{ x: number, y: number } | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>('retouch');
   
-  const [crop, setCrop] = useState<Crop>();
-  const [completedCrop, setCompletedCrop] = useState<PixelCrop>();
-  const [aspect, setAspect] = useState<number | undefined>();
   const [isComparing, setIsComparing] = useState<boolean>(false);
-  const imgRef = useRef<HTMLImageElement>(null);
 
   const currentImage = history[historyIndex] ?? null;
   const originalImage = history[0] ?? null;
@@ -87,9 +89,6 @@ const App: React.FC = () => {
     newHistory.push(newImageFile);
     setHistory(newHistory);
     setHistoryIndex(newHistory.length - 1);
-    // Reset transient states after an action
-    setCrop(undefined);
-    setCompletedCrop(undefined);
   }, [history, historyIndex]);
 
   const handleImageUpload = useCallback((file: File) => {
@@ -99,23 +98,21 @@ const App: React.FC = () => {
     setEditHotspot(null);
     setDisplayHotspot(null);
     setActiveTab('retouch');
-    setCrop(undefined);
-    setCompletedCrop(undefined);
   }, []);
 
   const handleGenerate = useCallback(async () => {
     if (!currentImage) {
-      setError('No image loaded to edit.');
+      setError('Nenhuma imagem carregada para editar.');
       return;
     }
     
     if (!prompt.trim()) {
-        setError('Please enter a description for your edit.');
+        setError('Por favor, insira uma descrição para sua edição.');
         return;
     }
 
     if (!editHotspot) {
-        setError('Please click on the image to select an area to edit.');
+        setError('Por favor, clique na imagem para selecionar uma área para editar.');
         return;
     }
 
@@ -129,8 +126,8 @@ const App: React.FC = () => {
         setEditHotspot(null);
         setDisplayHotspot(null);
     } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
-        setError(`Failed to generate the image. ${errorMessage}`);
+        const errorMessage = err instanceof Error ? err.message : 'Ocorreu um erro desconhecido.';
+        setError(`Falha ao gerar a imagem. ${errorMessage}`);
         console.error(err);
     } finally {
         setIsLoading(false);
@@ -139,7 +136,7 @@ const App: React.FC = () => {
   
   const handleApplyFilter = useCallback(async (filterPrompt: string) => {
     if (!currentImage) {
-      setError('No image loaded to apply a filter to.');
+      setError('Nenhuma imagem carregada para aplicar um filtro.');
       return;
     }
     
@@ -151,8 +148,8 @@ const App: React.FC = () => {
         const newImageFile = dataURLtoFile(filteredImageUrl, `filtered-${Date.now()}.png`);
         addImageToHistory(newImageFile);
     } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
-        setError(`Failed to apply the filter. ${errorMessage}`);
+        const errorMessage = err instanceof Error ? err.message : 'Ocorreu um erro desconhecido.';
+        setError(`Falha ao aplicar o filtro. ${errorMessage}`);
         console.error(err);
     } finally {
         setIsLoading(false);
@@ -161,7 +158,7 @@ const App: React.FC = () => {
   
   const handleApplyAdjustment = useCallback(async (adjustmentPrompt: string) => {
     if (!currentImage) {
-      setError('No image loaded to apply an adjustment to.');
+      setError('Nenhuma imagem carregada para aplicar um ajuste.');
       return;
     }
     
@@ -173,57 +170,35 @@ const App: React.FC = () => {
         const newImageFile = dataURLtoFile(adjustedImageUrl, `adjusted-${Date.now()}.png`);
         addImageToHistory(newImageFile);
     } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
-        setError(`Failed to apply the adjustment. ${errorMessage}`);
+        const errorMessage = err instanceof Error ? err.message : 'Ocorreu um erro desconhecido.';
+        setError(`Falha ao aplicar o ajuste. ${errorMessage}`);
         console.error(err);
     } finally {
         setIsLoading(false);
     }
   }, [currentImage, addImageToHistory]);
 
-  const handleApplyCrop = useCallback(() => {
-    if (!completedCrop || !imgRef.current) {
-        setError('Please select an area to crop.');
-        return;
+  const handleRemoveBackground = useCallback(async () => {
+    if (!currentImage) {
+      setError('Nenhuma imagem carregada para remover o fundo.');
+      return;
     }
-
-    const image = imgRef.current;
-    const canvas = document.createElement('canvas');
-    const scaleX = image.naturalWidth / image.width;
-    const scaleY = image.naturalHeight / image.height;
     
-    canvas.width = completedCrop.width;
-    canvas.height = completedCrop.height;
-    const ctx = canvas.getContext('2d');
-
-    if (!ctx) {
-        setError('Could not process the crop.');
-        return;
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+        const newImageUrl = await generateBackgroundImageRemoved(currentImage);
+        const newImageFile = dataURLtoFile(newImageUrl, `bg-removed-${Date.now()}.png`);
+        addImageToHistory(newImageFile);
+    } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'Ocorreu um erro desconhecido.';
+        setError(`Falha ao remover o fundo. ${errorMessage}`);
+        console.error(err);
+    } finally {
+        setIsLoading(false);
     }
-
-    const pixelRatio = window.devicePixelRatio || 1;
-    canvas.width = completedCrop.width * pixelRatio;
-    canvas.height = completedCrop.height * pixelRatio;
-    ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
-    ctx.imageSmoothingQuality = 'high';
-
-    ctx.drawImage(
-      image,
-      completedCrop.x * scaleX,
-      completedCrop.y * scaleY,
-      completedCrop.width * scaleX,
-      completedCrop.height * scaleY,
-      0,
-      0,
-      completedCrop.width,
-      completedCrop.height,
-    );
-    
-    const croppedImageUrl = canvas.toDataURL('image/png');
-    const newImageFile = dataURLtoFile(croppedImageUrl, `cropped-${Date.now()}.png`);
-    addImageToHistory(newImageFile);
-
-  }, [completedCrop, addImageToHistory]);
+  }, [currentImage, addImageToHistory]);
 
   const handleUndo = useCallback(() => {
     if (canUndo) {
@@ -259,15 +234,56 @@ const App: React.FC = () => {
       setDisplayHotspot(null);
   }, []);
 
-  const handleDownload = useCallback(() => {
-      if (currentImage) {
+  const handleDownload = useCallback(async (format: 'png' | 'jpg') => {
+      if (!currentImage) return;
+
+      const filename = `edited-${Date.now()}.${format}`;
+      
+      if (format === 'png') {
           const link = document.createElement('a');
           link.href = URL.createObjectURL(currentImage);
-          link.download = `edited-${currentImage.name}`;
+          link.download = filename;
           document.body.appendChild(link);
           link.click();
           document.body.removeChild(link);
           URL.revokeObjectURL(link.href);
+      } else { // format is 'jpg'
+          const image = new Image();
+          const objectUrl = URL.createObjectURL(currentImage);
+          
+          image.onload = () => {
+              const canvas = document.createElement('canvas');
+              canvas.width = image.naturalWidth;
+              canvas.height = image.naturalHeight;
+              const ctx = canvas.getContext('2d');
+              if (!ctx) {
+                  setError('Não foi possível criar o contexto do canvas para conversão.');
+                  URL.revokeObjectURL(objectUrl);
+                  return;
+              }
+              
+              // Draw a white background for any transparency
+              ctx.fillStyle = '#FFFFFF';
+              ctx.fillRect(0, 0, canvas.width, canvas.height);
+              ctx.drawImage(image, 0, 0);
+              
+              const jpgUrl = canvas.toDataURL('image/jpeg', 0.95);
+              
+              const link = document.createElement('a');
+              link.href = jpgUrl;
+              link.download = filename;
+              document.body.appendChild(link);
+              link.click();
+              document.body.removeChild(link);
+              URL.revokeObjectURL(objectUrl); // Clean up
+          };
+
+          image.onerror = () => {
+              setError('Falha ao carregar a imagem para conversão para JPG.');
+              URL.revokeObjectURL(objectUrl);
+          };
+
+          image.src = objectUrl;
       }
   }, [currentImage]);
   
@@ -302,13 +318,13 @@ const App: React.FC = () => {
     if (error) {
        return (
            <div className="text-center animate-fade-in bg-red-500/10 border border-red-500/20 p-8 rounded-lg max-w-2xl mx-auto flex flex-col items-center gap-4">
-            <h2 className="text-2xl font-bold text-red-300">An Error Occurred</h2>
+            <h2 className="text-2xl font-bold text-red-300">Ocorreu um Erro</h2>
             <p className="text-md text-red-400">{error}</p>
             <button
                 onClick={() => setError(null)}
                 className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-6 rounded-lg text-md transition-colors"
               >
-                Try Again
+                Tentar Novamente
             </button>
           </div>
         );
@@ -318,62 +334,33 @@ const App: React.FC = () => {
       return <StartScreen onFileSelect={handleFileSelect} />;
     }
 
-    const imageDisplay = (
-      <div className="relative">
-        {/* Base image is the original, always at the bottom */}
-        {originalImageUrl && (
-            <img
-                key={originalImageUrl}
-                src={originalImageUrl}
-                alt="Original"
-                className="w-full h-auto object-contain max-h-[60vh] rounded-xl pointer-events-none"
-            />
-        )}
-        {/* The current image is an overlay that fades in/out for comparison */}
-        <img
-            ref={imgRef}
-            key={currentImageUrl}
-            src={currentImageUrl}
-            alt="Current"
-            onClick={handleImageClick}
-            className={`absolute top-0 left-0 w-full h-auto object-contain max-h-[60vh] rounded-xl transition-opacity duration-200 ease-in-out ${isComparing ? 'opacity-0' : 'opacity-100'} ${activeTab === 'retouch' ? 'cursor-crosshair' : ''}`}
-        />
-      </div>
-    );
-    
-    // For ReactCrop, we need a single image element. We'll use the current one.
-    const cropImageElement = (
-      <img 
-        ref={imgRef}
-        key={`crop-${currentImageUrl}`}
-        src={currentImageUrl} 
-        alt="Crop this image"
-        className="w-full h-auto object-contain max-h-[60vh] rounded-xl"
-      />
-    );
-
-
     return (
       <div className="w-full max-w-4xl mx-auto flex flex-col items-center gap-6 animate-fade-in">
         <div className="relative w-full shadow-2xl rounded-xl overflow-hidden bg-black/20">
             {isLoading && (
                 <div className="absolute inset-0 bg-black/70 z-30 flex flex-col items-center justify-center gap-4 animate-fade-in">
                     <Spinner />
-                    <p className="text-gray-300">AI is working its magic...</p>
+                    <p className="text-gray-300">A IA está fazendo sua mágica...</p>
                 </div>
             )}
             
-            {activeTab === 'crop' ? (
-              <ReactCrop 
-                crop={crop} 
-                onChange={c => setCrop(c)} 
-                onComplete={c => setCompletedCrop(c)}
-                aspect={aspect}
-                className="max-h-[60vh]"
-              >
-                {cropImageElement}
-              </ReactCrop>
-            ) : imageDisplay }
+            <div className="relative">
+              {originalImageUrl && (
+                  <img
+                      key={originalImageUrl}
+                      src={originalImageUrl}
+                      alt="Original"
+                      className="w-full h-auto object-contain max-h-[60vh] rounded-xl pointer-events-none"
+                  />
+              )}
+              <img
+                  key={currentImageUrl}
+                  src={currentImageUrl}
+                  alt="Atual"
+                  onClick={handleImageClick}
+                  className={`absolute top-0 left-0 w-full h-auto object-contain max-h-[60vh] rounded-xl transition-opacity duration-200 ease-in-out ${isComparing ? 'opacity-0' : 'opacity-100'} ${activeTab === 'retouch' ? 'cursor-crosshair' : ''}`}
+              />
+            </div>
 
             {displayHotspot && !isLoading && activeTab === 'retouch' && (
                 <div 
@@ -386,7 +373,7 @@ const App: React.FC = () => {
         </div>
         
         <div className="w-full bg-gray-800/80 border border-gray-700/80 rounded-lg p-2 flex items-center justify-center gap-2 backdrop-blur-sm">
-            {(['retouch', 'crop', 'adjust', 'filters'] as Tab[]).map(tab => (
+            {(['retouch', 'remove-bg', 'adjust', 'filters'] as Tab[]).map(tab => (
                  <button
                     key={tab}
                     onClick={() => setActiveTab(tab)}
@@ -396,7 +383,7 @@ const App: React.FC = () => {
                         : 'text-gray-300 hover:text-white hover:bg-white/10'
                     }`}
                 >
-                    {tab}
+                    {tabNames[tab]}
                 </button>
             ))}
         </div>
@@ -405,14 +392,14 @@ const App: React.FC = () => {
             {activeTab === 'retouch' && (
                 <div className="flex flex-col items-center gap-4">
                     <p className="text-md text-gray-400">
-                        {editHotspot ? 'Great! Now describe your localized edit below.' : 'Click an area on the image to make a precise edit.'}
+                        {editHotspot ? 'Ótimo! Agora descreva sua edição localizada abaixo.' : 'Clique em uma área da imagem para fazer uma edição precisa.'}
                     </p>
                     <form onSubmit={(e) => { e.preventDefault(); handleGenerate(); }} className="w-full flex items-center gap-2">
                         <input
                             type="text"
                             value={prompt}
                             onChange={(e) => setPrompt(e.target.value)}
-                            placeholder={editHotspot ? "e.g., 'change my shirt color to blue'" : "First click a point on the image"}
+                            placeholder={editHotspot ? "ex: 'mude a cor da minha camisa para azul'" : "Primeiro clique em um ponto na imagem"}
                             className="flex-grow bg-gray-800 border border-gray-700 text-gray-200 rounded-lg p-5 text-lg focus:ring-2 focus:ring-blue-500 focus:outline-none transition w-full disabled:cursor-not-allowed disabled:opacity-60"
                             disabled={isLoading || !editHotspot}
                         />
@@ -421,12 +408,12 @@ const App: React.FC = () => {
                             className="bg-gradient-to-br from-blue-600 to-blue-500 text-white font-bold py-5 px-8 text-lg rounded-lg transition-all duration-300 ease-in-out shadow-lg shadow-blue-500/20 hover:shadow-xl hover:shadow-blue-500/40 hover:-translate-y-px active:scale-95 active:shadow-inner disabled:from-blue-800 disabled:to-blue-700 disabled:shadow-none disabled:cursor-not-allowed disabled:transform-none"
                             disabled={isLoading || !prompt.trim() || !editHotspot}
                         >
-                            Generate
+                            Gerar
                         </button>
                     </form>
                 </div>
             )}
-            {activeTab === 'crop' && <CropPanel onApplyCrop={handleApplyCrop} onSetAspect={setAspect} isLoading={isLoading} isCropping={!!completedCrop?.width && completedCrop.width > 0} />}
+            {activeTab === 'remove-bg' && <RemoveBackgroundPanel onRemoveBackground={handleRemoveBackground} isLoading={isLoading} />}
             {activeTab === 'adjust' && <AdjustmentPanel onApplyAdjustment={handleApplyAdjustment} isLoading={isLoading} />}
             {activeTab === 'filters' && <FilterPanel onApplyFilter={handleApplyFilter} isLoading={isLoading} />}
         </div>
@@ -436,19 +423,19 @@ const App: React.FC = () => {
                 onClick={handleUndo}
                 disabled={!canUndo}
                 className="flex items-center justify-center text-center bg-white/10 border border-white/20 text-gray-200 font-semibold py-3 px-5 rounded-md transition-all duration-200 ease-in-out hover:bg-white/20 hover:border-white/30 active:scale-95 text-base disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-white/5"
-                aria-label="Undo last action"
+                aria-label="Desfazer última ação"
             >
                 <UndoIcon className="w-5 h-5 mr-2" />
-                Undo
+                Desfazer
             </button>
             <button 
                 onClick={handleRedo}
                 disabled={!canRedo}
                 className="flex items-center justify-center text-center bg-white/10 border border-white/20 text-gray-200 font-semibold py-3 px-5 rounded-md transition-all duration-200 ease-in-out hover:bg-white/20 hover:border-white/30 active:scale-95 text-base disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-white/5"
-                aria-label="Redo last action"
+                aria-label="Refazer última ação"
             >
                 <RedoIcon className="w-5 h-5 mr-2" />
-                Redo
+                Refazer
             </button>
             
             <div className="h-6 w-px bg-gray-600 mx-1 hidden sm:block"></div>
@@ -461,10 +448,10 @@ const App: React.FC = () => {
                   onTouchStart={() => setIsComparing(true)}
                   onTouchEnd={() => setIsComparing(false)}
                   className="flex items-center justify-center text-center bg-white/10 border border-white/20 text-gray-200 font-semibold py-3 px-5 rounded-md transition-all duration-200 ease-in-out hover:bg-white/20 hover:border-white/30 active:scale-95 text-base"
-                  aria-label="Press and hold to see original image"
+                  aria-label="Pressione e segure para ver a imagem original"
               >
                   <EyeIcon className="w-5 h-5 mr-2" />
-                  Compare
+                  Comparar
               </button>
             )}
 
@@ -473,21 +460,29 @@ const App: React.FC = () => {
                 disabled={!canUndo}
                 className="text-center bg-transparent border border-white/20 text-gray-200 font-semibold py-3 px-5 rounded-md transition-all duration-200 ease-in-out hover:bg-white/10 hover:border-white/30 active:scale-95 text-base disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-transparent"
               >
-                Reset
+                Redefinir
             </button>
             <button 
                 onClick={handleUploadNew}
                 className="text-center bg-white/10 border border-white/20 text-gray-200 font-semibold py-3 px-5 rounded-md transition-all duration-200 ease-in-out hover:bg-white/20 hover:border-white/30 active:scale-95 text-base"
             >
-                Upload New
+                Enviar Nova
             </button>
 
-            <button 
-                onClick={handleDownload}
-                className="flex-grow sm:flex-grow-0 ml-auto bg-gradient-to-br from-green-600 to-green-500 text-white font-bold py-3 px-5 rounded-md transition-all duration-300 ease-in-out shadow-lg shadow-green-500/20 hover:shadow-xl hover:shadow-green-500/40 hover:-translate-y-px active:scale-95 active:shadow-inner text-base"
-            >
-                Download Image
-            </button>
+            <div className="flex-grow sm:flex-grow-0 ml-auto flex gap-2">
+                <button 
+                    onClick={() => handleDownload('png')}
+                    className="bg-gradient-to-br from-green-600 to-green-500 text-white font-bold py-3 px-5 rounded-md transition-all duration-300 ease-in-out shadow-lg shadow-green-500/20 hover:shadow-xl hover:shadow-green-500/40 hover:-translate-y-px active:scale-95 active:shadow-inner text-base"
+                >
+                    Baixar PNG
+                </button>
+                <button 
+                    onClick={() => handleDownload('jpg')}
+                    className="bg-gradient-to-br from-teal-600 to-teal-500 text-white font-bold py-3 px-5 rounded-md transition-all duration-300 ease-in-out shadow-lg shadow-teal-500/20 hover:shadow-xl hover:shadow-teal-500/40 hover:-translate-y-px active:scale-95 active:shadow-inner text-base"
+                >
+                    Baixar JPG
+                </button>
+            </div>
         </div>
       </div>
     );

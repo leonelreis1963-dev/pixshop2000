@@ -15,10 +15,10 @@ const FilterPanel: React.FC<FilterPanelProps> = ({ onApplyFilter, isLoading }) =
   const [customPrompt, setCustomPrompt] = useState('');
 
   const presets = [
-    { name: 'Synthwave', prompt: 'Apply a vibrant 80s synthwave aesthetic with neon magenta and cyan glows, and subtle scan lines.' },
-    { name: 'Anime', prompt: 'Give the image a vibrant Japanese anime style, with bold outlines, cel-shading, and saturated colors.' },
-    { name: 'Lomo', prompt: 'Apply a Lomography-style cross-processing film effect with high-contrast, oversaturated colors, and dark vignetting.' },
-    { name: 'Glitch', prompt: 'Transform the image into a futuristic holographic projection with digital glitch effects and chromatic aberration.' },
+    { name: 'Synthwave', prompt: 'Aplique uma estética vibrante synthwave dos anos 80 com brilhos neon magenta e ciano, e linhas de varredura sutis.' },
+    { name: 'Anime', prompt: 'Dê à imagem um estilo vibrante de anime japonês, com contornos ousados, cel-shading e cores saturadas.' },
+    { name: 'Lomo', prompt: 'Aplique um efeito de filme de processamento cruzado estilo Lomography com alto contraste, cores supersaturadas e vinhetas escuras.' },
+    { name: 'Glitch', prompt: 'Transforme a imagem em uma projeção holográfica futurista com efeitos de falha digital e aberração cromática.' },
   ];
   
   const activePrompt = selectedPresetPrompt || customPrompt;
@@ -41,7 +41,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({ onApplyFilter, isLoading }) =
 
   return (
     <div className="w-full bg-gray-800/50 border border-gray-700 rounded-lg p-4 flex flex-col gap-4 animate-fade-in backdrop-blur-sm">
-      <h3 className="text-lg font-semibold text-center text-gray-300">Apply a Filter</h3>
+      <h3 className="text-lg font-semibold text-center text-gray-300">Aplicar um Filtro</h3>
       
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
         {presets.map(preset => (
@@ -60,7 +60,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({ onApplyFilter, isLoading }) =
         type="text"
         value={customPrompt}
         onChange={handleCustomChange}
-        placeholder="Or describe a custom filter (e.g., '80s synthwave glow')"
+        placeholder="Ou descreva um filtro personalizado (ex: 'brilho synthwave anos 80')"
         className="flex-grow bg-gray-800 border border-gray-600 text-gray-200 rounded-lg p-4 focus:ring-2 focus:ring-blue-500 focus:outline-none transition w-full disabled:cursor-not-allowed disabled:opacity-60 text-base"
         disabled={isLoading}
       />
@@ -72,7 +72,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({ onApplyFilter, isLoading }) =
             className="w-full bg-gradient-to-br from-blue-600 to-blue-500 text-white font-bold py-4 px-6 rounded-lg transition-all duration-300 ease-in-out shadow-lg shadow-blue-500/20 hover:shadow-xl hover:shadow-blue-500/40 hover:-translate-y-px active:scale-95 active:shadow-inner text-base disabled:from-blue-800 disabled:to-blue-700 disabled:shadow-none disabled:cursor-not-allowed disabled:transform-none"
             disabled={isLoading || !activePrompt.trim()}
           >
-            Apply Filter
+            Aplicar Filtro
           </button>
         </div>
       )}

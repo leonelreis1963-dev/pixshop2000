@@ -1,6 +1,6 @@
 {
   "name": "Pixshop2000",
-  "description": "A powerful, AI photo editor. Retouch, apply creative filters, and make professional adjustments to your images using simple text prompts.",
+  "description": "Um poderoso editor de fotos com IA. Retoque, aplique filtros criativos e faça ajustes profissionais em suas imagens usando simples comandos de texto.",
   "requestFramePermissions": [],
   "prompt": ""
 }
