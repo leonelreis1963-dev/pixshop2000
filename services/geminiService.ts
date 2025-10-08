@@ -32,7 +32,8 @@ const handleApiResponse = (
         edit: 'edição',
         filter: 'filtro',
         adjustment: 'ajuste',
-        'background-removal': 'remoção de fundo'
+        'background-removal': 'remoção de fundo',
+        'combine': 'combinação'
     };
     const translatedContext = contextMap[context] || context;
 
@@ -212,4 +213,48 @@ Saída: Retorne APENAS a imagem final com o fundo removido. Não retorne texto.`
     console.log('Received response from model for background removal.', response);
     
     return handleApiResponse(response, 'background-removal');
+};
+
+/**
+ * Combines an element from a source image into a destination image.
+ * @param sourceImage The image to copy an element from.
+ * @param destinationImage The image to paste the element into.
+ * @param elementPrompt A text description of the element to move.
+ * @param sourceHotspot The {x, y} coordinates of the element in the source image.
+ * @param destinationHotspot The {x, y} coordinates for placement in the destination image.
+ * @returns A promise that resolves to the data URL of the combined image.
+ */
+export const combineImages = async (
+    sourceImage: File,
+    destinationImage: File,
+    elementPrompt: string,
+    sourceHotspot: { x: number, y: number },
+    destinationHotspot: { x: number, y: number }
+): Promise<string> => {
+    console.log(`Starting image combination: moving "${elementPrompt}"`);
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
+    
+    const sourceImagePart = await fileToPart(sourceImage);
+    const destinationImagePart = await fileToPart(destinationImage);
+    
+    const prompt = `Você é um especialista em composição de imagens. Sua tarefa é pegar um elemento de uma 'imagem de origem' e colá-lo em uma 'imagem de destino'.
+
+1.  **Identifique o Elemento:** Na 'imagem de origem' (a primeira imagem), encontre o seguinte elemento descrito como "${elementPrompt}" perto das coordenadas (x: ${sourceHotspot.x}, y: ${sourceHotspot.y}).
+2.  **Extraia o Elemento:** Recorte este elemento com precisão.
+3.  **Cole na Destino:** Insira o elemento extraído na 'imagem de destino' (a segunda imagem) nas coordenadas aproximadas (x: ${destinationHotspot.x}, y: ${destinationHotspot.y}).
+4.  **Combine Naturalmente:** Ajuste a iluminação, sombras, cor e perspectiva do elemento colado para que ele se integre perfeitamente ao ambiente da 'imagem de destino'. O resultado final deve ser uma única imagem fotorrealista.
+
+A 'imagem de origem' é a primeira imagem fornecida, e a 'imagem de destino' é a segunda.
+
+Saída: Retorne APENAS a imagem final combinada. Não retorne texto.`;
+    const textPart = { text: prompt };
+
+    console.log('Sending images and combine prompt to the model...');
+    const response: GenerateContentResponse = await ai.models.generateContent({
+        model: 'gemini-2.5-flash-image',
+        contents: { parts: [sourceImagePart, destinationImagePart, textPart] },
+    });
+    console.log('Received response from model for combination.', response);
+    
+    return handleApiResponse(response, 'combine');
 };
