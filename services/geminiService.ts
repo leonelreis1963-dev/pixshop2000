@@ -3,7 +3,22 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 
-import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
+// FIX: Import Modality for responseModalities config.
+import { GoogleGenAI, GenerateContentResponse, Modality } from "@google/genai";
+
+// FIX: API key must be retrieved from process.env.API_KEY as per guidelines.
+// This also resolves the TypeScript error 'Property 'env' does not exist on type 'ImportMeta''.
+const apiKey = process.env.API_KEY;
+
+if (!apiKey) {
+    // Este erro será lançado se a API_KEY não estiver definida no ambiente.
+    const errorMessage = "A variável de ambiente API_KEY não está definida. Por favor, adicione-a às configurações de ambiente do seu projeto para continuar.";
+    // Mostra o erro para o usuário de uma forma que ele possa ver, se o app já renderizou algo.
+    alert(errorMessage);
+    throw new Error(errorMessage);
+}
+
+const ai = new GoogleGenAI({ apiKey });
 
 // Helper function to convert a File object to a Gemini API Part
 const fileToPart = async (file: File): Promise<{ inlineData: { mimeType: string; data: string; } }> => {
@@ -33,7 +48,8 @@ const handleApiResponse = (
         filter: 'filtro',
         adjustment: 'ajuste',
         'background-removal': 'remoção de fundo',
-        'combine': 'combinação'
+        'combine': 'combinação',
+        'upscaling': 'aprimoramento de resolução'
     };
     const translatedContext = contextMap[context] || context;
 
@@ -85,7 +101,6 @@ export const generateEditedImage = async (
     hotspot: { x: number, y: number }
 ): Promise<string> => {
     console.log('Starting generative edit at:', hotspot);
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
     
     const originalImagePart = await fileToPart(originalImage);
     const prompt = `Você é uma IA especialista em edição de fotos. Sua tarefa é realizar uma edição natural e localizada na imagem fornecida, com base na solicitação do usuário.
@@ -107,6 +122,10 @@ Saída: Retorne APENAS a imagem final editada. Não retorne texto.`;
     const response: GenerateContentResponse = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image',
         contents: { parts: [originalImagePart, textPart] },
+        // FIX: Added required config for image editing model.
+        config: {
+            responseModalities: [Modality.IMAGE, Modality.TEXT],
+        },
     });
     console.log('Received response from model.', response);
 
@@ -124,7 +143,6 @@ export const generateFilteredImage = async (
     filterPrompt: string,
 ): Promise<string> => {
     console.log(`Starting filter generation: ${filterPrompt}`);
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
     
     const originalImagePart = await fileToPart(originalImage);
     const prompt = `Você é uma IA especialista em edição de fotos. Sua tarefa é aplicar um filtro estilístico a toda a imagem com base na solicitação do usuário. Não altere a composição ou o conteúdo, apenas aplique o estilo.
@@ -141,6 +159,10 @@ Saída: Retorne APENAS a imagem final filtrada. Não retorne texto.`;
     const response: GenerateContentResponse = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image',
         contents: { parts: [originalImagePart, textPart] },
+        // FIX: Added required config for image editing model.
+        config: {
+            responseModalities: [Modality.IMAGE, Modality.TEXT],
+        },
     });
     console.log('Received response from model for filter.', response);
     
@@ -158,7 +180,6 @@ export const generateAdjustedImage = async (
     adjustmentPrompt: string,
 ): Promise<string> => {
     console.log(`Starting global adjustment generation: ${adjustmentPrompt}`);
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
     
     const originalImagePart = await fileToPart(originalImage);
     const prompt = `Você é uma IA especialista em edição de fotos. Sua tarefa é realizar um ajuste natural e global em toda a imagem com base na solicitação do usuário.
@@ -179,6 +200,10 @@ Saída: Retorne APENAS a imagem final ajustada. Não retorne texto.`;
     const response: GenerateContentResponse = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image',
         contents: { parts: [originalImagePart, textPart] },
+        // FIX: Added required config for image editing model.
+        config: {
+            responseModalities: [Modality.IMAGE, Modality.TEXT],
+        },
     });
     console.log('Received response from model for adjustment.', response);
     
@@ -194,7 +219,6 @@ export const generateBackgroundImageRemoved = async (
     originalImage: File,
 ): Promise<string> => {
     console.log(`Starting background removal`);
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
     
     const originalImagePart = await fileToPart(originalImage);
     const prompt = `Você é uma IA especialista em edição de fotos. Sua tarefa é identificar o assunto principal na imagem, remover completamente o fundo e substituí-lo por um fundo branco puro (#FFFFFF). O assunto principal deve permanecer inalterado e perfeitamente recortado.
@@ -209,6 +233,10 @@ Saída: Retorne APENAS a imagem final com o fundo removido. Não retorne texto.`
     const response: GenerateContentResponse = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image',
         contents: { parts: [originalImagePart, textPart] },
+        // FIX: Added required config for image editing model.
+        config: {
+            responseModalities: [Modality.IMAGE, Modality.TEXT],
+        },
     });
     console.log('Received response from model for background removal.', response);
     
@@ -232,7 +260,6 @@ export const combineImages = async (
     destinationHotspot: { x: number, y: number }
 ): Promise<string> => {
     console.log(`Starting image combination: moving "${elementPrompt}"`);
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
     
     const sourceImagePart = await fileToPart(sourceImage);
     const destinationImagePart = await fileToPart(destinationImage);
@@ -253,8 +280,49 @@ Saída: Retorne APENAS a imagem final combinada. Não retorne texto.`;
     const response: GenerateContentResponse = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image',
         contents: { parts: [sourceImagePart, destinationImagePart, textPart] },
+        // FIX: Added required config for image editing model.
+        config: {
+            responseModalities: [Modality.IMAGE, Modality.TEXT],
+        },
     });
     console.log('Received response from model for combination.', response);
     
     return handleApiResponse(response, 'combine');
+};
+
+/**
+ * Upscales an image using generative AI to enhance details and resolution.
+ * @param originalImage The low-resolution image file to upscale.
+ * @returns A promise that resolves to the data URL of the upscaled image.
+ */
+export const generateUpscaledImage = async (
+    originalImage: File,
+): Promise<string> => {
+    console.log(`Starting AI upscaling`);
+    
+    const originalImagePart = await fileToPart(originalImage);
+    const prompt = `Você é um especialista em super-resolução de imagem e aprimoramento de fotos. Sua tarefa é aumentar a resolução da imagem fornecida, aprimorando significativamente seus detalhes e nitidez.
+
+Diretrizes:
+- Aumente a resolução da imagem.
+- Adicione detalhes finos e texturas que pareçam naturais e realistas.
+- Melhore a nitidez geral sem introduzir artefatos ou halos.
+- Preserve o conteúdo e a composição originais da imagem.
+- O resultado deve ser uma versão fotorrealista e de alta qualidade da imagem de entrada.
+
+Saída: Retorne APENAS a imagem final aprimorada. Não retorne texto.`;
+    const textPart = { text: prompt };
+
+    console.log('Sending image for AI upscaling...');
+    const response: GenerateContentResponse = await ai.models.generateContent({
+        model: 'gemini-2.5-flash-image',
+        contents: { parts: [originalImagePart, textPart] },
+        // FIX: Added required config for image editing model.
+        config: {
+            responseModalities: [Modality.IMAGE, Modality.TEXT],
+        },
+    });
+    console.log('Received response from model for upscaling.', response);
+    
+    return handleApiResponse(response, 'upscaling');
 };

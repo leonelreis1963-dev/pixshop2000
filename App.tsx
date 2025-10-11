@@ -5,7 +5,7 @@
 
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { generateEditedImage, generateFilteredImage, generateAdjustedImage, generateBackgroundImageRemoved, combineImages } from './services/geminiService';
+import { generateEditedImage, generateFilteredImage, generateAdjustedImage, generateBackgroundImageRemoved, combineImages, generateUpscaledImage } from './services/geminiService';
 import Header from './components/Header';
 import Spinner from './components/Spinner';
 import FilterPanel from './components/FilterPanel';
@@ -15,8 +15,8 @@ import { UndoIcon, RedoIcon, EyeIcon } from './components/icons';
 import StartScreen from './components/StartScreen';
 import CombineImagesPanel from './components/CombineImagesPanel';
 
-// Helper to upscale the low-resolution AI output to the original image's dimensions
-const createUpscaledImageFile = (
+// Fallback upscaler using simple canvas resizing
+const simpleUpscaleImageFile = (
     lowResDataUrl: string,
     highResReferenceFile: File,
     filename: string
@@ -46,6 +46,7 @@ const createUpscaledImageFile = (
                 return reject(new Error('Não foi possível criar o contexto do canvas para redimensionamento.'));
             }
 
+            ctx.imageSmoothingQuality = 'high';
             ctx.drawImage(lowResImage, 0, 0, canvas.width, canvas.height);
 
             canvas.toBlob((blob) => {
@@ -59,26 +60,85 @@ const createUpscaledImageFile = (
             }, 'image/png');
         };
 
-        highResImage.onload = () => {
-            highResLoaded = true;
-            checkAndProcess();
-        };
-        highResImage.onerror = () => {
-            cleanup();
-            reject(new Error('Falha ao carregar a imagem original de alta resolução.'));
-        };
-
-        lowResImage.onload = () => {
-            lowResLoaded = true;
-            checkAndProcess();
-        };
-        lowResImage.onerror = () => {
-            cleanup();
-            reject(new Error('Falha ao carregar a imagem editada de baixa resolução.'));
-        };
-
+        highResImage.onload = () => { highResLoaded = true; checkAndProcess(); };
+        highResImage.onerror = () => { cleanup(); reject(new Error('Falha ao carregar a imagem original de alta resolução.')); };
+        lowResImage.onload = () => { lowResLoaded = true; checkAndProcess(); };
+        lowResImage.onerror = () => { cleanup(); reject(new Error('Falha ao carregar a imagem editada de baixa resolução.')); };
         highResImage.src = highResObjectUrl;
         lowResImage.src = lowResDataUrl;
+    });
+};
+
+// Helper to upscale the low-resolution AI output to the original image's dimensions
+// using AI upscaling with a fallback to simple canvas resizing.
+const createUpscaledImageFile = (
+    lowResDataUrl: string,
+    highResReferenceFile: File,
+    filename: string
+): Promise<File> => {
+    return new Promise(async (resolve, reject) => {
+        try {
+            // 1. Convert low-res data URL to a File object
+            const response = await fetch(lowResDataUrl);
+            if (!response.ok) {
+                throw new Error('Falha ao buscar a imagem de baixa resolução para aprimoramento.');
+            }
+            const lowResBlob = await response.blob();
+            const lowResFile = new File([lowResBlob], "temp-for-upscale.png", { type: lowResBlob.type });
+
+            // 2. Call the new AI upscaling service
+            const aiUpscaledDataUrl = await generateUpscaledImage(lowResFile);
+
+            // 3. Resize the AI-upscaled image to the original's exact dimensions
+            const highResImage = new Image();
+            const aiUpscaledImage = new Image();
+            const highResObjectUrl = URL.createObjectURL(highResReferenceFile);
+
+            let highResLoaded = false;
+            let aiUpscaledLoaded = false;
+
+            const cleanup = () => { URL.revokeObjectURL(highResObjectUrl); };
+
+            const checkAndProcess = () => {
+                if (!highResLoaded || !aiUpscaledLoaded) return;
+
+                const canvas = document.createElement('canvas');
+                canvas.width = highResImage.naturalWidth;
+                canvas.height = highResImage.naturalHeight;
+                const ctx = canvas.getContext('2d');
+                if (!ctx) {
+                    cleanup();
+                    return reject(new Error('Não foi possível criar o contexto do canvas para redimensionamento final.'));
+                }
+
+                ctx.imageSmoothingQuality = 'high';
+                ctx.drawImage(aiUpscaledImage, 0, 0, canvas.width, canvas.height);
+
+                canvas.toBlob((blob) => {
+                    cleanup();
+                    if (!blob) {
+                        return reject(new Error('Falha ao criar o blob da imagem redimensionada.'));
+                    }
+                    const newFile = new File([blob], filename, { type: lowResBlob.type });
+                    resolve(newFile);
+                }, lowResBlob.type, 0.95);
+            };
+            
+            highResImage.onload = () => { highResLoaded = true; checkAndProcess(); };
+            highResImage.onerror = () => { cleanup(); reject(new Error('Falha ao carregar a imagem original de alta resolução.')); };
+            aiUpscaledImage.onload = () => { aiUpscaledLoaded = true; checkAndProcess(); };
+            aiUpscaledImage.onerror = () => { cleanup(); reject(new Error('Falha ao carregar a imagem aprimorada pela IA.')); };
+            
+            highResImage.src = highResObjectUrl;
+            aiUpscaledImage.src = aiUpscaledDataUrl;
+
+        } catch (error) {
+            console.error("Erro durante o aprimoramento com IA:", error);
+            console.log("Revertendo para o redimensionamento simples...");
+            simpleUpscaleImageFile(lowResDataUrl, highResReferenceFile, filename)
+                .then(resolve)
+                .catch(reject);
+        }
     });
 };
 
@@ -96,6 +156,7 @@ const App: React.FC = () => {
   // Common state
   const [mode, setMode] = useState<AppMode>('start');
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [loadingMessage, setLoadingMessage] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   
   // Editor mode state
@@ -221,6 +282,7 @@ const App: React.FC = () => {
         return;
     }
     setIsLoading(true);
+    setLoadingMessage('A IA está fazendo sua mágica...');
     setError(null);
     try {
         let newImageUrl: string;
@@ -229,6 +291,7 @@ const App: React.FC = () => {
         } else {
             newImageUrl = await generateAdjustedImage(currentEditorImage, prompt);
         }
+        setLoadingMessage('Aprimorando a qualidade da imagem...');
         const newImageFile = await createUpscaledImageFile(newImageUrl, originalEditorImage, `edited-${Date.now()}.png`);
         addImageToEditorHistory(newImageFile);
         setEditHotspot(null);
@@ -240,6 +303,7 @@ const App: React.FC = () => {
         console.error(err);
     } finally {
         setIsLoading(false);
+        setLoadingMessage('');
     }
   }, [currentEditorImage, originalEditorImage, prompt, editHotspot, addImageToEditorHistory]);
   
@@ -249,9 +313,11 @@ const App: React.FC = () => {
       return;
     }
     setIsLoading(true);
+    setLoadingMessage('Aplicando filtro...');
     setError(null);
     try {
         const filteredImageUrl = await generateFilteredImage(currentEditorImage, filterPrompt);
+        setLoadingMessage('Aprimorando a qualidade da imagem...');
         const newImageFile = await createUpscaledImageFile(filteredImageUrl, originalEditorImage, `filtered-${Date.now()}.png`);
         addImageToEditorHistory(newImageFile);
     } catch (err) {
@@ -260,6 +326,7 @@ const App: React.FC = () => {
         console.error(err);
     } finally {
         setIsLoading(false);
+        setLoadingMessage('');
     }
   }, [currentEditorImage, originalEditorImage, addImageToEditorHistory]);
   
@@ -269,9 +336,11 @@ const App: React.FC = () => {
       return;
     }
     setIsLoading(true);
+    setLoadingMessage('Aplicando ajuste...');
     setError(null);
     try {
         const adjustedImageUrl = await generateAdjustedImage(currentEditorImage, adjustmentPrompt);
+        setLoadingMessage('Aprimorando a qualidade da imagem...');
         const newImageFile = await createUpscaledImageFile(adjustedImageUrl, originalEditorImage, `adjusted-${Date.now()}.png`);
         addImageToEditorHistory(newImageFile);
     } catch (err) {
@@ -280,6 +349,7 @@ const App: React.FC = () => {
         console.error(err);
     } finally {
         setIsLoading(false);
+        setLoadingMessage('');
     }
   }, [currentEditorImage, originalEditorImage, addImageToEditorHistory]);
 
@@ -289,9 +359,11 @@ const App: React.FC = () => {
       return;
     }
     setIsLoading(true);
+    setLoadingMessage('Removendo o fundo...');
     setError(null);
     try {
         const newImageUrl = await generateBackgroundImageRemoved(currentEditorImage);
+        setLoadingMessage('Aprimorando a qualidade da imagem...');
         const newImageFile = await createUpscaledImageFile(newImageUrl, originalEditorImage, `bg-removed-${Date.now()}.png`);
         addImageToEditorHistory(newImageFile);
     } catch (err) {
@@ -300,6 +372,7 @@ const App: React.FC = () => {
         console.error(err);
     } finally {
         setIsLoading(false);
+        setLoadingMessage('');
     }
   }, [currentEditorImage, originalEditorImage, addImageToEditorHistory]);
 
@@ -411,10 +484,12 @@ const App: React.FC = () => {
     }
       
       setIsLoading(true);
+      setLoadingMessage('A IA está combinando as imagens...');
       setError(null);
 
       try {
           const newImageUrl = await combineImages(sourceImage, currentDestinationImage, elementPrompt, sourceSelection, destinationTarget);
+          setLoadingMessage('Aprimorando a qualidade da imagem...');
           const newImageFile = await createUpscaledImageFile(newImageUrl, originalDestinationImage, `combined-${Date.now()}.png`);
           addImageToDestinationHistory(newImageFile);
           
@@ -430,6 +505,7 @@ const App: React.FC = () => {
           console.error(err);
       } finally {
           setIsLoading(false);
+          setLoadingMessage('');
       }
   }, [sourceImage, currentDestinationImage, originalDestinationImage, sourceSelection, destinationTarget, addImageToDestinationHistory]);
 
@@ -495,7 +571,7 @@ const App: React.FC = () => {
               {isLoading && (
                   <div className="absolute inset-0 bg-black/70 z-30 flex flex-col items-center justify-center gap-4 animate-fade-in">
                       <Spinner />
-                      <p className="text-gray-300">A IA está fazendo sua mágica...</p>
+                      <p className="text-gray-300">{loadingMessage}</p>
                   </div>
               )}
               
@@ -595,7 +671,7 @@ const App: React.FC = () => {
           {isLoading && (
               <div className="fixed inset-0 bg-black/80 z-50 flex flex-col items-center justify-center gap-4 animate-fade-in">
                   <Spinner />
-                  <p className="text-gray-300 text-lg">A IA está combinando as imagens...</p>
+                  <p className="text-gray-300 text-lg">{loadingMessage}</p>
               </div>
           )}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 w-full">
