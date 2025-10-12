@@ -6,19 +6,9 @@
 // FIX: Import Modality for responseModalities config.
 import { GoogleGenAI, GenerateContentResponse, Modality } from "@google/genai";
 
-// FIX: API key must be retrieved from process.env.API_KEY as per guidelines.
-// This also resolves the TypeScript error 'Property 'env' does not exist on type 'ImportMeta''.
-const apiKey = process.env.API_KEY;
-
-if (!apiKey) {
-    // Este erro será lançado se a API_KEY não estiver definida no ambiente.
-    const errorMessage = "A variável de ambiente API_KEY não está definida. Por favor, adicione-a às configurações de ambiente do seu projeto para continuar.";
-    // Mostra o erro para o usuário de uma forma que ele possa ver, se o app já renderizou algo.
-    alert(errorMessage);
-    throw new Error(errorMessage);
-}
-
-const ai = new GoogleGenAI({ apiKey });
+// FIX: Per coding guidelines, initialize GoogleGenAI directly with process.env.API_KEY.
+// This resolves the TypeScript error with `import.meta.env` and ensures compliance.
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 // Helper function to convert a File object to a Gemini API Part
 const fileToPart = async (file: File): Promise<{ inlineData: { mimeType: string; data: string; } }> => {
