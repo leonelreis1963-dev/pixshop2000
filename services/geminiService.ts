@@ -5,15 +5,15 @@
 
 import { GoogleGenAI, GenerateContentResponse, Modality } from "@google/genai";
 
-// Fix: Use process.env.API_KEY as per the guidelines. This is more standard and avoids TypeScript errors in some setups.
+// Fix: Use `process.env.API_KEY` as per the coding guidelines to resolve the TypeScript error with `import.meta.env`.
 const apiKey = process.env.API_KEY;
+
 if (!apiKey) {
-  // Isso interromperá a execução imediatamente se a chave não for encontrada,
-  // deixando claro que o problema é a variável de ambiente.
-  throw new Error("ERRO CRÍTICO: A variável de ambiente API_KEY não foi encontrada. Verifique as configurações do seu projeto.");
+  // Esta mensagem de erro agora é mais específica para o ambiente do usuário.
+  throw new Error("ERRO CRÍTICO: A variável de ambiente API_KEY não foi encontrada. Verifique se ela está configurada corretamente.");
 }
 
-const ai = new GoogleGenAI({ apiKey });
+const ai = new GoogleGenAI({ apiKey: apiKey });
 
 
 // Helper function to convert a File object to a Gemini API Part
