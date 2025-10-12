@@ -3,12 +3,18 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 
-// FIX: Import Modality for responseModalities config.
 import { GoogleGenAI, GenerateContentResponse, Modality } from "@google/genai";
 
-// FIX: Per coding guidelines, initialize GoogleGenAI directly with process.env.API_KEY.
-// This resolves the TypeScript error with `import.meta.env` and ensures compliance.
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Fix: Use process.env.API_KEY as per the guidelines. This is more standard and avoids TypeScript errors in some setups.
+const apiKey = process.env.API_KEY;
+if (!apiKey) {
+  // Isso interromperá a execução imediatamente se a chave não for encontrada,
+  // deixando claro que o problema é a variável de ambiente.
+  throw new Error("ERRO CRÍTICO: A variável de ambiente API_KEY não foi encontrada. Verifique as configurações do seu projeto.");
+}
+
+const ai = new GoogleGenAI({ apiKey });
+
 
 // Helper function to convert a File object to a Gemini API Part
 const fileToPart = async (file: File): Promise<{ inlineData: { mimeType: string; data: string; } }> => {
@@ -112,7 +118,6 @@ Saída: Retorne APENAS a imagem final editada. Não retorne texto.`;
     const response: GenerateContentResponse = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image',
         contents: { parts: [originalImagePart, textPart] },
-        // FIX: Added required config for image editing model.
         config: {
             responseModalities: [Modality.IMAGE, Modality.TEXT],
         },
@@ -149,7 +154,6 @@ Saída: Retorne APENAS a imagem final filtrada. Não retorne texto.`;
     const response: GenerateContentResponse = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image',
         contents: { parts: [originalImagePart, textPart] },
-        // FIX: Added required config for image editing model.
         config: {
             responseModalities: [Modality.IMAGE, Modality.TEXT],
         },
@@ -190,7 +194,6 @@ Saída: Retorne APENAS a imagem final ajustada. Não retorne texto.`;
     const response: GenerateContentResponse = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image',
         contents: { parts: [originalImagePart, textPart] },
-        // FIX: Added required config for image editing model.
         config: {
             responseModalities: [Modality.IMAGE, Modality.TEXT],
         },
@@ -223,7 +226,6 @@ Saída: Retorne APENAS a imagem final com o fundo removido. Não retorne texto.`
     const response: GenerateContentResponse = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image',
         contents: { parts: [originalImagePart, textPart] },
-        // FIX: Added required config for image editing model.
         config: {
             responseModalities: [Modality.IMAGE, Modality.TEXT],
         },
@@ -270,7 +272,6 @@ Saída: Retorne APENAS a imagem final combinada. Não retorne texto.`;
     const response: GenerateContentResponse = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image',
         contents: { parts: [sourceImagePart, destinationImagePart, textPart] },
-        // FIX: Added required config for image editing model.
         config: {
             responseModalities: [Modality.IMAGE, Modality.TEXT],
         },
@@ -307,7 +308,6 @@ Saída: Retorne APENAS a imagem final aprimorada. Não retorne texto.`;
     const response: GenerateContentResponse = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image',
         contents: { parts: [originalImagePart, textPart] },
-        // FIX: Added required config for image editing model.
         config: {
             responseModalities: [Modality.IMAGE, Modality.TEXT],
         },
