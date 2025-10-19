@@ -41,8 +41,7 @@ const handleApiResponse = (
         filter: 'filtro',
         adjustment: 'ajuste',
         'background-removal': 'remoção de fundo',
-        'combine': 'combinação',
-        'upscaling': 'aprimoramento de resolução'
+        'combine': 'combinação'
     };
     const translatedContext = contextMap[context] || context;
 
@@ -276,40 +275,4 @@ Saída: Retorne APENAS a imagem final combinada. Não retorne texto.`;
     console.log('Received response from model for combination.', response);
     
     return handleApiResponse(response, 'combine');
-};
-
-/**
- * Upscales an image using generative AI to enhance details and resolution.
- * @param originalImage The low-resolution image file to upscale.
- * @returns A promise that resolves to the data URL of the upscaled image.
- */
-export const generateUpscaledImage = async (
-    originalImage: File,
-): Promise<string> => {
-    console.log(`Starting AI upscaling`);
-    
-    const originalImagePart = await fileToPart(originalImage);
-    const prompt = `Você é um especialista em super-resolução de imagem e aprimoramento de fotos. Sua tarefa é aumentar a resolução da imagem fornecida, aprimorando significativamente seus detalhes e nitidez.
-
-Diretrizes:
-- Aumente a resolução da imagem.
-- Adicione detalhes finos e texturas que pareçam naturais e realistas.
-- Melhore a nitidez geral sem introduzir artefatos ou halos.
-- Preserve o conteúdo e a composição originais da imagem.
-- O resultado deve ser uma versão fotorrealista e de alta qualidade da imagem de entrada.
-
-Saída: Retorne APENAS a imagem final aprimorada. Não retorne texto.`;
-    const textPart = { text: prompt };
-
-    console.log('Sending image for AI upscaling...');
-    const response: GenerateContentResponse = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-image',
-        contents: { parts: [originalImagePart, textPart] },
-        config: {
-            responseModalities: [Modality.IMAGE, Modality.TEXT],
-        },
-    });
-    console.log('Received response from model for upscaling.', response);
-    
-    return handleApiResponse(response, 'upscaling');
 };

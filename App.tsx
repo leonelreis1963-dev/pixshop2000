@@ -5,7 +5,7 @@
 
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { generateEditedImage, generateFilteredImage, generateAdjustedImage, generateBackgroundImageRemoved, combineImages, generateUpscaledImage } from './services/geminiService';
+import { generateEditedImage, generateFilteredImage, generateAdjustedImage, generateBackgroundImageRemoved, combineImages } from './services/geminiService';
 import Header from './components/Header';
 import Spinner from './components/Spinner';
 import FilterPanel from './components/FilterPanel';
@@ -15,131 +15,12 @@ import { UndoIcon, RedoIcon, EyeIcon } from './components/icons';
 import StartScreen from './components/StartScreen';
 import CombineImagesPanel from './components/CombineImagesPanel';
 
-// Fallback upscaler using simple canvas resizing
-const simpleUpscaleImageFile = (
-    lowResDataUrl: string,
-    highResReferenceFile: File,
-    filename: string
-): Promise<File> => {
-    return new Promise((resolve, reject) => {
-        const highResImage = new Image();
-        const lowResImage = new Image();
-        const highResObjectUrl = URL.createObjectURL(highResReferenceFile);
-
-        let highResLoaded = false;
-        let lowResLoaded = false;
-
-        const cleanup = () => {
-            URL.revokeObjectURL(highResObjectUrl);
-        };
-
-        const checkAndProcess = () => {
-            if (!highResLoaded || !lowResLoaded) return;
-
-            const canvas = document.createElement('canvas');
-            canvas.width = highResImage.naturalWidth;
-            canvas.height = highResImage.naturalHeight;
-            const ctx = canvas.getContext('2d');
-
-            if (!ctx) {
-                cleanup();
-                return reject(new Error('Não foi possível criar o contexto do canvas para redimensionamento.'));
-            }
-
-            ctx.imageSmoothingQuality = 'high';
-            ctx.drawImage(lowResImage, 0, 0, canvas.width, canvas.height);
-
-            canvas.toBlob((blob) => {
-                cleanup();
-                if (!blob) {
-                    return reject(new Error('Falha ao criar o blob da imagem redimensionada.'));
-                }
-                const mimeType = lowResDataUrl.split(',')[0].match(/:(.*?);/)?.[1] || 'image/png';
-                const newFile = new File([blob], filename, { type: mimeType });
-                resolve(newFile);
-            }, 'image/png');
-        };
-
-        highResImage.onload = () => { highResLoaded = true; checkAndProcess(); };
-        highResImage.onerror = () => { cleanup(); reject(new Error('Falha ao carregar a imagem original de alta resolução.')); };
-        lowResImage.onload = () => { lowResLoaded = true; checkAndProcess(); };
-        lowResImage.onerror = () => { cleanup(); reject(new Error('Falha ao carregar a imagem editada de baixa resolução.')); };
-        highResImage.src = highResObjectUrl;
-        lowResImage.src = lowResDataUrl;
-    });
-};
-
-// Helper to upscale the low-resolution AI output to the original image's dimensions
-// using AI upscaling with a fallback to simple canvas resizing.
-const createUpscaledImageFile = (
-    lowResDataUrl: string,
-    highResReferenceFile: File,
-    filename: string
-): Promise<File> => {
-    return new Promise(async (resolve, reject) => {
-        try {
-            // 1. Convert low-res data URL to a File object
-            const response = await fetch(lowResDataUrl);
-            if (!response.ok) {
-                throw new Error('Falha ao buscar a imagem de baixa resolução para aprimoramento.');
-            }
-            const lowResBlob = await response.blob();
-            const lowResFile = new File([lowResBlob], "temp-for-upscale.png", { type: lowResBlob.type });
-
-            // 2. Call the new AI upscaling service
-            const aiUpscaledDataUrl = await generateUpscaledImage(lowResFile);
-
-            // 3. Resize the AI-upscaled image to the original's exact dimensions
-            const highResImage = new Image();
-            const aiUpscaledImage = new Image();
-            const highResObjectUrl = URL.createObjectURL(highResReferenceFile);
-
-            let highResLoaded = false;
-            let aiUpscaledLoaded = false;
-
-            const cleanup = () => { URL.revokeObjectURL(highResObjectUrl); };
-
-            const checkAndProcess = () => {
-                if (!highResLoaded || !aiUpscaledLoaded) return;
-
-                const canvas = document.createElement('canvas');
-                canvas.width = highResImage.naturalWidth;
-                canvas.height = highResImage.naturalHeight;
-                const ctx = canvas.getContext('2d');
-                if (!ctx) {
-                    cleanup();
-                    return reject(new Error('Não foi possível criar o contexto do canvas para redimensionamento final.'));
-                }
-
-                ctx.imageSmoothingQuality = 'high';
-                ctx.drawImage(aiUpscaledImage, 0, 0, canvas.width, canvas.height);
-
-                canvas.toBlob((blob) => {
-                    cleanup();
-                    if (!blob) {
-                        return reject(new Error('Falha ao criar o blob da imagem redimensionada.'));
-                    }
-                    const newFile = new File([blob], filename, { type: lowResBlob.type });
-                    resolve(newFile);
-                }, lowResBlob.type, 0.95);
-            };
-            
-            highResImage.onload = () => { highResLoaded = true; checkAndProcess(); };
-            highResImage.onerror = () => { cleanup(); reject(new Error('Falha ao carregar a imagem original de alta resolução.')); };
-            aiUpscaledImage.onload = () => { aiUpscaledLoaded = true; checkAndProcess(); };
-            aiUpscaledImage.onerror = () => { cleanup(); reject(new Error('Falha ao carregar a imagem aprimorada pela IA.')); };
-            
-            highResImage.src = highResObjectUrl;
-            aiUpscaledImage.src = aiUpscaledDataUrl;
-
-        } catch (error) {
-            console.error("Erro durante o aprimoramento com IA:", error);
-            console.log("Revertendo para o redimensionamento simples...");
-            simpleUpscaleImageFile(lowResDataUrl, highResReferenceFile, filename)
-                .then(resolve)
-                .catch(reject);
-        }
-    });
+// Helper to convert a data URL to a File object
+const dataURLtoFile = async (dataUrl: string, filename: string): Promise<File> => {
+    const res = await fetch(dataUrl);
+    const blob = await res.blob();
+    const mimeType = dataUrl.split(',')[0].match(/:(.*?);/)?.[1] || blob.type;
+    return new File([blob], filename, { type: mimeType });
 };
 
 type Tab = 'retouch' | 'adjust' | 'filters' | 'remove-bg';
@@ -273,7 +154,7 @@ const App: React.FC = () => {
 
   // --- Editor Mode Handlers ---
   const handleGenerate = useCallback(async () => {
-    if (!currentEditorImage || !originalEditorImage) {
+    if (!currentEditorImage) {
       setError('Nenhuma imagem carregada para editar.');
       return;
     }
@@ -291,8 +172,7 @@ const App: React.FC = () => {
         } else {
             newImageUrl = await generateAdjustedImage(currentEditorImage, prompt);
         }
-        setLoadingMessage('Aprimorando a qualidade da imagem...');
-        const newImageFile = await createUpscaledImageFile(newImageUrl, originalEditorImage, `edited-${Date.now()}.png`);
+        const newImageFile = await dataURLtoFile(newImageUrl, `edited-${Date.now()}.png`);
         addImageToEditorHistory(newImageFile);
         setEditHotspot(null);
         setDisplayHotspot(null);
@@ -305,10 +185,10 @@ const App: React.FC = () => {
         setIsLoading(false);
         setLoadingMessage('');
     }
-  }, [currentEditorImage, originalEditorImage, prompt, editHotspot, addImageToEditorHistory]);
+  }, [currentEditorImage, prompt, editHotspot, addImageToEditorHistory]);
   
   const handleApplyFilter = useCallback(async (filterPrompt: string) => {
-    if (!currentEditorImage || !originalEditorImage) {
+    if (!currentEditorImage) {
       setError('Nenhuma imagem carregada para aplicar um filtro.');
       return;
     }
@@ -317,8 +197,7 @@ const App: React.FC = () => {
     setError(null);
     try {
         const filteredImageUrl = await generateFilteredImage(currentEditorImage, filterPrompt);
-        setLoadingMessage('Aprimorando a qualidade da imagem...');
-        const newImageFile = await createUpscaledImageFile(filteredImageUrl, originalEditorImage, `filtered-${Date.now()}.png`);
+        const newImageFile = await dataURLtoFile(filteredImageUrl, `filtered-${Date.now()}.png`);
         addImageToEditorHistory(newImageFile);
     } catch (err) {
         const errorMessage = err instanceof Error ? err.message : 'Ocorreu um erro desconhecido.';
@@ -328,10 +207,10 @@ const App: React.FC = () => {
         setIsLoading(false);
         setLoadingMessage('');
     }
-  }, [currentEditorImage, originalEditorImage, addImageToEditorHistory]);
+  }, [currentEditorImage, addImageToEditorHistory]);
   
   const handleApplyAdjustment = useCallback(async (adjustmentPrompt: string) => {
-    if (!currentEditorImage || !originalEditorImage) {
+    if (!currentEditorImage) {
       setError('Nenhuma imagem carregada para aplicar um ajuste.');
       return;
     }
@@ -340,8 +219,7 @@ const App: React.FC = () => {
     setError(null);
     try {
         const adjustedImageUrl = await generateAdjustedImage(currentEditorImage, adjustmentPrompt);
-        setLoadingMessage('Aprimorando a qualidade da imagem...');
-        const newImageFile = await createUpscaledImageFile(adjustedImageUrl, originalEditorImage, `adjusted-${Date.now()}.png`);
+        const newImageFile = await dataURLtoFile(adjustedImageUrl, `adjusted-${Date.now()}.png`);
         addImageToEditorHistory(newImageFile);
     } catch (err) {
         const errorMessage = err instanceof Error ? err.message : 'Ocorreu um erro desconhecido.';
@@ -351,10 +229,10 @@ const App: React.FC = () => {
         setIsLoading(false);
         setLoadingMessage('');
     }
-  }, [currentEditorImage, originalEditorImage, addImageToEditorHistory]);
+  }, [currentEditorImage, addImageToEditorHistory]);
 
   const handleRemoveBackground = useCallback(async () => {
-    if (!currentEditorImage || !originalEditorImage) {
+    if (!currentEditorImage) {
       setError('Nenhuma imagem carregada para remover o fundo.');
       return;
     }
@@ -363,8 +241,7 @@ const App: React.FC = () => {
     setError(null);
     try {
         const newImageUrl = await generateBackgroundImageRemoved(currentEditorImage);
-        setLoadingMessage('Aprimorando a qualidade da imagem...');
-        const newImageFile = await createUpscaledImageFile(newImageUrl, originalEditorImage, `bg-removed-${Date.now()}.png`);
+        const newImageFile = await dataURLtoFile(newImageUrl, `bg-removed-${Date.now()}.png`);
         addImageToEditorHistory(newImageFile);
     } catch (err) {
         const errorMessage = err instanceof Error ? err.message : 'Ocorreu um erro desconhecido.';
@@ -374,7 +251,7 @@ const App: React.FC = () => {
         setIsLoading(false);
         setLoadingMessage('');
     }
-  }, [currentEditorImage, originalEditorImage, addImageToEditorHistory]);
+  }, [currentEditorImage, addImageToEditorHistory]);
 
   const handleUndo = useCallback(() => {
     if (canUndo) {
@@ -474,7 +351,7 @@ const App: React.FC = () => {
 
   // --- Combine Mode Handlers ---
   const handleCombineGenerate = useCallback(async (elementPrompt: string) => {
-      if (!sourceImage || !currentDestinationImage || !sourceSelection || !destinationTarget || !originalDestinationImage) {
+      if (!sourceImage || !currentDestinationImage || !sourceSelection || !destinationTarget) {
           setError('Por favor, selecione um elemento de origem e um local de destino antes de combinar.');
           return;
       }
@@ -489,8 +366,7 @@ const App: React.FC = () => {
 
       try {
           const newImageUrl = await combineImages(sourceImage, currentDestinationImage, elementPrompt, sourceSelection, destinationTarget);
-          setLoadingMessage('Aprimorando a qualidade da imagem...');
-          const newImageFile = await createUpscaledImageFile(newImageUrl, originalDestinationImage, `combined-${Date.now()}.png`);
+          const newImageFile = await dataURLtoFile(newImageUrl, `combined-${Date.now()}.png`);
           addImageToDestinationHistory(newImageFile);
           
           // Reset selections for next operation
@@ -507,7 +383,7 @@ const App: React.FC = () => {
           setIsLoading(false);
           setLoadingMessage('');
       }
-  }, [sourceImage, currentDestinationImage, originalDestinationImage, sourceSelection, destinationTarget, addImageToDestinationHistory]);
+  }, [sourceImage, currentDestinationImage, sourceSelection, destinationTarget, addImageToDestinationHistory]);
 
   const handleImageClickForCombine = (e: React.MouseEvent<HTMLImageElement>, type: 'source' | 'destination') => {
     const img = e.currentTarget;
