@@ -5,10 +5,9 @@
 
 import { GoogleGenAI, GenerateContentResponse, Modality } from "@google/genai";
 
-// Fix: Switched from `import.meta.env` to `process.env.API_KEY` to align with the coding guidelines and resolve the TypeScript error.
+// Fix: The API key must be obtained from `process.env.API_KEY` as per coding guidelines. This resolves the TypeScript error with `import.meta.env`.
 if (!process.env.API_KEY) {
-    // This error will be visible in the browser's console if the environment variable is not configured.
-    throw new Error("The API_KEY environment variable was not found. Please check your Vercel settings.");
+    throw new Error("A variável de ambiente API_KEY não foi encontrada.");
 }
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
@@ -115,7 +114,8 @@ Saída: Retorne APENAS a imagem final editada. Não retorne texto.`;
         model: 'gemini-2.5-flash-image',
         contents: { parts: [originalImagePart, textPart] },
         config: {
-            responseModalities: [Modality.IMAGE, Modality.TEXT],
+            // Fix: responseModalities must be an array with a single Modality.IMAGE element as per the guidelines for image editing.
+            responseModalities: [Modality.IMAGE],
         },
     });
     console.log('Received response from model.', response);
@@ -151,7 +151,8 @@ Saída: Retorne APENAS a imagem final filtrada. Não retorne texto.`;
         model: 'gemini-2.5-flash-image',
         contents: { parts: [originalImagePart, textPart] },
         config: {
-            responseModalities: [Modality.IMAGE, Modality.TEXT],
+            // Fix: responseModalities must be an array with a single Modality.IMAGE element as per the guidelines for image editing.
+            responseModalities: [Modality.IMAGE],
         },
     });
     console.log('Received response from model for filter.', response);
@@ -191,7 +192,8 @@ Saída: Retorne APENAS a imagem final ajustada. Não retorne texto.`;
         model: 'gemini-2.5-flash-image',
         contents: { parts: [originalImagePart, textPart] },
         config: {
-            responseModalities: [Modality.IMAGE, Modality.TEXT],
+            // Fix: responseModalities must be an array with a single Modality.IMAGE element as per the guidelines for image editing.
+            responseModalities: [Modality.IMAGE],
         },
     });
     console.log('Received response from model for adjustment.', response);
@@ -252,7 +254,8 @@ Saída: Retorne APENAS a imagem final com o fundo removido. Não retorne texto.`
         model: 'gemini-2.5-flash-image',
         contents: { parts: [originalImagePart, textPart] },
         config: {
-            responseModalities: [Modality.IMAGE, Modality.TEXT],
+            // Fix: responseModalities must be an array with a single Modality.IMAGE element as per the guidelines for image editing.
+            responseModalities: [Modality.IMAGE],
         },
     });
     console.log('Received response from model for background removal.', response);
@@ -298,7 +301,8 @@ Saída: Retorne APENAS a imagem final combinada. Não retorne texto.`;
         model: 'gemini-2.5-flash-image',
         contents: { parts: [sourceImagePart, destinationImagePart, textPart] },
         config: {
-            responseModalities: [Modality.IMAGE, Modality.TEXT],
+            // Fix: responseModalities must be an array with a single Modality.IMAGE element as per the guidelines for image editing.
+            responseModalities: [Modality.IMAGE],
         },
     });
     console.log('Received response from model for combination.', response);
