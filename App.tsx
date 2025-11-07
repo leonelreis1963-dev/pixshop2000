@@ -231,7 +231,7 @@ const App: React.FC = () => {
     }
   }, [currentEditorImage, addImageToEditorHistory]);
 
-  const handleRemoveBackground = useCallback(async () => {
+  const handleRemoveBackground = useCallback(async (aggressiveness: number) => {
     if (!currentEditorImage) {
       setError('Nenhuma imagem carregada para remover o fundo.');
       return;
@@ -240,7 +240,7 @@ const App: React.FC = () => {
     setLoadingMessage('Removendo o fundo...');
     setError(null);
     try {
-        const newImageUrl = await generateBackgroundImageRemoved(currentEditorImage);
+        const newImageUrl = await generateBackgroundImageRemoved(currentEditorImage, aggressiveness);
         const newImageFile = await dataURLtoFile(newImageUrl, `bg-removed-${Date.now()}.png`);
         addImageToEditorHistory(newImageFile);
     } catch (err) {

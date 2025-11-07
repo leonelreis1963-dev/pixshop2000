@@ -74,7 +74,7 @@ const handleApiResponse = (
     const errorMessage = `O modelo de IA não retornou uma imagem para o ${translatedContext}. ` + 
         (textFeedback 
             ? `O modelo respondeu com o texto: "${textFeedback}"`
-            : "Isso pode acontecer devido a filtros de segurança ou se a solicitação for muito complexa. Tente reformular seu comando para ser mais direto.");
+            : "Isso pode acontecer due a filtros de segurança ou se a solicitação for muito complexa. Tente reformular seu comando para ser mais direto.");
 
     console.error(`Model response did not contain an image part for ${context}.`, { response });
     throw new Error(errorMessage);
@@ -202,15 +202,44 @@ Saída: Retorne APENAS a imagem final ajustada. Não retorne texto.`;
 /**
  * Generates an image with the background removed and replaced with white.
  * @param originalImage The original image file.
+ * @param aggressiveness The level of aggressiveness for background removal (1-5).
  * @returns A promise that resolves to the data URL of the edited image.
  */
 export const generateBackgroundImageRemoved = async (
     originalImage: File,
+    aggressiveness: number,
 ): Promise<string> => {
-    console.log(`Starting background removal`);
+    console.log(`Starting background removal with aggressiveness level: ${aggressiveness}`);
     
+    let preservationInstruction = '';
+    switch (aggressiveness) {
+        case 1: // Mínima
+            preservationInstruction = "Seja extremamente conservador com o recorte. É melhor deixar um pouco de resíduo de fundo do que remover acidentalmente qualquer parte do assunto. A prioridade máxima é a preservação total de 100% do assunto, incluindo os detalhes mais finos e semi-transparentes.";
+            break;
+        case 2: // Leve
+            preservationInstruction = "Seja cauteloso com o recorte. Priorize a preservação total do assunto. Preste muita atenção aos detalhes finos e garanta que não sejam removidos.";
+            break;
+        case 4: // Forte
+            preservationInstruction = "Faça um recorte mais agressivo. Priorize um fundo perfeitamente limpo, mesmo que isso signifique perder detalhes muito finos ou semi-transparentes na borda do assunto. O recorte pode ser um pouco mais 'duro' para garantir a limpeza.";
+            break;
+        case 5: // Máxima
+            preservationInstruction = "A prioridade máxima é um fundo perfeitamente limpo. Remova agressivamente qualquer pixel que possa fazer parte do fundo. Não se preocupe em preservar detalhes extremamente finos ou bordas complexas se isso comprometer a limpeza do fundo branco.";
+            break;
+        case 3: // Normal (Balanceado)
+        default:
+            preservationInstruction = "Preste atenção extra aos detalhes finos e intrincados do assunto principal, como correntes, cabelos, rendas ou quaisquer partes finas. É CRUCIAL que NENHUMA parte do assunto principal seja removida, mesmo que seja semi-transparente ou difícil de distinguir do fundo. Preserve a integridade completa do objeto.";
+            break;
+    }
+
     const originalImagePart = await fileToPart(originalImage);
-    const prompt = `Você é uma IA especialista em edição de fotos. Sua tarefa é identificar o assunto principal na imagem, remover completamente o fundo e substituí-lo por um fundo branco puro (#FFFFFF). O assunto principal deve permanecer inalterado e perfeitamente recortado.
+    const prompt = `Você é uma IA especialista em edição de fotos. Sua tarefa é identificar o assunto principal na imagem, remover completamente o fundo e substituí-lo por um fundo branco puro (#FFFFFF).
+
+**Instruções de Recorte (Nível de Agressividade: ${aggressiveness}/5):**
+- **Preservação do Assunto:** ${preservationInstruction}
+- O recorte do assunto principal deve ser preciso, seguindo a diretriz de preservação acima.
+- As bordas entre o assunto e o novo fundo branco devem ter uma transição suave e natural, evitando um aspecto de "recorte duro". Use um leve esfumaçamento ou anti-aliasing nas bordas para garantir que a integração pareça realista, a menos que a instrução de preservação exija um corte mais duro.
+
+O assunto principal em si deve permanecer inalterado.
     
 Política de Segurança e Ética:
 - Você DEVE RECUSAR qualquer solicitação para alterar a raça ou etnia fundamental de uma pessoa.
